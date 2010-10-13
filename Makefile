@@ -11,6 +11,10 @@ PREFIX=/usr
 
 platform := $(shell python -c 'import sys; print sys.platform')
 
+ifeq ($(platform),linux2)
+	platform := linux
+endif
+
 # fix me
 arch = x86_64
 
@@ -19,6 +23,9 @@ ifeq ($(platform),darwin)
 	LINKFLAGS += -framework Carbon
 endif
 
+ifeq ($(platform),linux)
+	LINKFLAGS += -pthread -lrt
+endif
 
 ifdef WANT_OPENSSL
 	HAVE_OPENSSL = 1
@@ -62,7 +69,7 @@ libev_CPPFLAGS = -Ideps/libev -Ideps/libev/$(platform)/
 
 libeio_sources = deps/libeio/eio.c
 libeio_objects = $(profile_builddir)/deps/libeio/eio.o
-libeio_CPPFLAGS = -Ideps/libeio -Ideps/libeio/$(platform)/
+libeio_CPPFLAGS = -D_GNU_SOURCE -Ideps/libeio -Ideps/libeio/$(platform)/
 
 http_parser_sources = deps/http_parser/http_parser.c
 http_parser_objects = $(profile_builddir)/deps/http_parser/http_parser.o
@@ -91,13 +98,15 @@ node_sources = src/node.cc \
 	src/node_signal_watcher.cc \
 	src/node_stat_watcher.cc \
 	src/node_stdio.cc \
-	src/node_timer.cc
+	src/node_timer.cc \
+	src/node_javascript.cc \
+
 node_objects = $(addprefix $(profile_builddir)/,$(node_sources:.cc=.o))
 node_CPPFLAGS = -Isrc/ -Ideps/libeio/ -Ideps/libev/ -Ideps/http_parser/ \
 	-Ideps/libev/include/ -Ideps/v8/include -DPLATFORM=\"$(platform)\" \
-  -I$(profile_builddir)/src $(cares_CPPFLAGS) \
-	 -DX_STACKSIZE=65536 -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64 \
-	 -DHAVE_FDATASYNC=0 
+	-I$(profile_builddir)/src $(cares_CPPFLAGS) \
+	-DX_STACKSIZE=65536 -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64 \
+	-DHAVE_FDATASYNC=0 
 
 libv8 = $(builddir)/libv8.a
 
