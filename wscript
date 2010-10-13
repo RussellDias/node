@@ -572,14 +572,6 @@ def build(bld):
   bld.install_files('${PREFIX}/lib/node/wafadmin', 'tools/wafadmin/*.py')
   bld.install_files('${PREFIX}/lib/node/wafadmin/Tools', 'tools/wafadmin/Tools/*.py')
 
-  # create a pkg-config(1) file
-  node_conf = bld.new_task_gen('subst', before="cxx")
-  node_conf.source = 'tools/nodejs.pc.in'
-  node_conf.target = 'tools/nodejs.pc'
-  node_conf.dict = subflags(node)
-
-  bld.install_files('${PREFIX}/lib/pkgconfig', 'tools/nodejs.pc')
-
 def shutdown():
   Options.options.debug
   # HACK to get binding.node out of build directory.

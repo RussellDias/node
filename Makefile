@@ -9,6 +9,8 @@
 WANT_OPENSSL=1
 PREFIX=/usr
 
+INSTALL = install
+
 platform := $(shell python -c 'import sys; print sys.platform')
 
 ifeq ($(platform),linux2)
@@ -115,12 +117,13 @@ dirs = $(profile_builddir)/src \
 	$(profile_builddir)/deps/libeio \
 	$(profile_builddir)/deps/c-ares \
 	$(profile_builddir)/deps/http_parser \
-	$(profile_builddir)/deps/v8
+	$(profile_builddir)/deps/v8 \
+	$(profile_builddir)/lib/pkgconfig
 
 
 # Rules
 
-all: $(dirs) $(profile_builddir)/node
+all: $(dirs) $(profile_builddir)/node $(profile_builddir)/lib/pkgconfig/nodejs.pc
 
 $(dirs):
 	mkdir -p $@
@@ -159,6 +162,14 @@ $(profile_builddir)/src/node_config.h: src/node_config.h.in
 		-e "s#@CCFLAGS@#$(CFLAGS)#" \
 		-e "s#@CPPFLAGS@#$(CPPFLAGS)#" $< > $@ || rm $@
 
+# FIXME convert to a generalized *.in preprocessor
+$(profile_builddir)/lib/pkgconfig/nodejs.pc: tools/nodejs.pc.in
+	sed \
+		-e "s#@PREFIX@#$(PREFIX)#" \
+		-e "s#@VERSION@#$(VERSION)#" \
+		-e "s#@CCFLAGS@#$(CFLAGS)#" \
+		-e "s#@CPPFLAGS@#$(CPPFLAGS)#" $< > $@ || rm $@
+
 # v8 does its own debug and release version, so we don't put it in the
 # profile_builddir but rather just the builddir.
 $(libv8):
@@ -185,6 +196,14 @@ all-progress:
 	@$(WAF) -p build
 
 install:
+	$(INSTALL) -d \
+		$(PREFIX)/bin \
+		$(PREFIX)/include/node \
+		$(PREFIX)/lib/pkgconfig \
+		$(PREFIX)/share/man/man1
+
+	$(INSTALL) $(profile_builddir)/lib/pkgconfig/nodejs.pc $(PREFIX)/lib/pkgconfig/nodejs.pc
+
 	@$(WAF) install
 
 uninstall:
