@@ -48,37 +48,37 @@ cflags += -pedantic
 # Default profile is debug 'make PROFILE=release' for a release.
 PROFILE ?= debug
 
-debug_CFLAGS = -Wall -O0 -ggdb
-debug_CPPDEFINES = -DDEBUG
-debug_builddir = build/debug
+debug_CPPDEFINES = -DDEBUG $(CFLAGS)
+debug_CFLAGS = -Wall -O0 -ggdb $(CFLAGS)
+debug_CXXFLAGS = $(debug_CFLAGS)
+debug_LINKFLAGS = $(LINKFLAGS)
 
-release_CFLAGS = -Wall -O2
 release_CPPDEFINES = -DNODEBUG
-release_builddir = build/release
+release_CFLAGS = -Wall -O2
+release_CXXFLAGS = $(release_CFLAGS)
+release_LINKFLAGS = $(LINKFLAGS)
 
-CPPFLAGS  += $($(PROFILE)_CPPFLAGS)
-CFLAGS    += $($(PROFILE)_CFLAGS)
-LINKFLAGS += $($(PROFILE)_LINKFLAGS)
 builddir = build
-profile_builddir = $(builddir)/$(PROFILE)
-
-
 
 
 libev_sources = deps/libev/ev.c
-libev_objects = $(profile_builddir)/deps/libev/ev.o
 libev_CPPFLAGS = -Ideps/libev -Ideps/libev/$(platform)/
+libev_release_objects = $(builddir)/release/deps/libev/ev.o
+libev_debug_objects = $(builddir)/debug/deps/libev/ev.o
 
 libeio_sources = deps/libeio/eio.c
-libeio_objects = $(profile_builddir)/deps/libeio/eio.o
+libeio_release_objects = $(builddir)/release/deps/libeio/eio.o
+libeio_debug_objects = $(builddir)/debug/deps/libeio/eio.o
 libeio_CPPFLAGS = -D_GNU_SOURCE -Ideps/libeio -Ideps/libeio/$(platform)/
 
 http_parser_sources = deps/http_parser/http_parser.c
-http_parser_objects = $(profile_builddir)/deps/http_parser/http_parser.o
+http_parser_release_objects = $(builddir)/release/deps/http_parser/http_parser.o
+http_parser_debug_objects = $(builddir)/debug/deps/http_parser/http_parser.o
 http_parser_CPPFLAGS = -Ideps/http_parser
 
 cares_sources = $(wildcard deps/c-ares/*.c)
-cares_objects = $(addprefix $(profile_builddir)/,$(cares_sources:.c=.o))
+cares_release_objects = $(addprefix $(builddir)/release/,$(cares_sources:.c=.o))
+cares_debug_objects = $(addprefix $(builddir)/debug/,$(cares_sources:.c=.o))
 cares_CPPFLAGS = -DHAVE_CONFIG_H=1 -Ideps/c-ares -Ideps/c-ares/$(platform)-$(arch)
 
 node_sources = src/node.cc \
@@ -103,67 +103,152 @@ node_sources = src/node.cc \
 	src/node_timer.cc \
 	src/node_javascript.cc \
 
-node_objects = $(addprefix $(profile_builddir)/,$(node_sources:.cc=.o))
+node_debug_objects = $(addprefix $(builddir)/debug/,$(node_sources:.cc=.o))
+node_release_objects = $(addprefix $(builddir)/release/,$(node_sources:.cc=.o))
+
+# TODO HAVE_FDATASYNC should be set in configure.
+
 node_CPPFLAGS = -Isrc/ -Ideps/libeio/ -Ideps/libev/ -Ideps/http_parser/ \
 	-Ideps/libev/include/ -Ideps/v8/include -DPLATFORM=\"$(platform)\" \
-	-I$(profile_builddir)/src $(cares_CPPFLAGS) \
 	-DX_STACKSIZE=65536 -D_LARGEFILE_SOURCE -D_FILE_OFFSET_BITS=64 \
-	-DHAVE_FDATASYNC=0 
+	-DHAVE_FDATASYNC=0 -I$(builddir)/release/src $(cares_CPPFLAGS)
+node_debug_CPPFLAGS = $(subst release,debug,$(NODE_CPPFLAGS))
 
 libv8 = $(builddir)/libv8.a
+libv8_g = $(builddir)/libv8_g.a
 
-dirs = $(profile_builddir)/src \
-	$(profile_builddir)/deps/libev \
-	$(profile_builddir)/deps/libeio \
-	$(profile_builddir)/deps/c-ares \
-	$(profile_builddir)/deps/http_parser \
-	$(profile_builddir)/deps/v8 \
-	$(profile_builddir)/lib/pkgconfig
-
+dirs = $(builddir)/release/src \
+	$(builddir)/release/deps/libev \
+	$(builddir)/release/deps/libeio \
+	$(builddir)/release/deps/c-ares \
+	$(builddir)/release/deps/http_parser \
+	$(builddir)/release/deps/v8 \
+	$(builddir)/release/lib/pkgconfig
+debug_dirs = $(subst release,debug,$(dirs))
 
 # Rules
 
-all: $(dirs) $(profile_builddir)/node $(profile_builddir)/lib/pkgconfig/nodejs.pc
+all: $(dirs) node
 
-$(dirs):
+ifdef DEBUG
+all: $(debug_dirs) node_g
+endif
+
+
+node: $(builddir)/node
+	ln -s $< $@
+
+node_g: $(builddir)/node_g
+	ln -s $< $@
+
+
+
+$(dirs) $(debug_dirs):
 	mkdir -p $@
 
-$(profile_builddir)/deps/libev/%.o: deps/libev/%.c 
-	$(CC) -c $(CFLAGS) $(CPPFLAGS) $(libev_CFLAGS) $(libev_CPPFLAGS) $< -o $@
 
-$(profile_builddir)/deps/libeio/%.o: deps/libeio/%.c 
-	$(CC) -c $(CFLAGS) $(CPPFLAGS) $(libeio_CFLAGS) $(libeio_CPPFLAGS) $< -o $@
+# libev
 
-$(profile_builddir)/deps/http_parser/%.o: deps/http_parser/%.c 
-	$(CC) -c $(CFLAGS) $(CPPFLAGS) $(http_parser_CFLAGS) \
+$(builddir)/release/deps/libev/%.o: deps/libev/%.c 
+	$(CC) -c $(release_CFLAGS) $(release_CPPFLAGS) $(libev_CFLAGS) \
+		$(libev_CPPFLAGS) $< -o $@
+
+$(builddir)/debug/deps/libev/%.o: deps/libev/%.c 
+	$(CC) -c $(debug_CFLAGS) $(debug_CPPFLAGS) $(libev_CFLAGS) \
+		$(libev_CPPFLAGS) $< -o $@
+
+
+# libeio
+
+$(builddir)/release/deps/libeio/%.o: deps/libeio/%.c 
+	$(CC) -c $(release_CFLAGS) $(release_CPPFLAGS) $(libeio_CFLAGS) \
+		$(libeio_CPPFLAGS) $< -o $@
+
+$(builddir)/debug/deps/libeio/%.o: deps/libeio/%.c 
+	$(CC) -c $(debug_CFLAGS) $(debug_CPPFLAGS) $(libeio_CFLAGS) \
+		$(libeio_CPPFLAGS) $< -o $@
+
+
+# http-parser
+
+$(builddir)/release/deps/http_parser/%.o: deps/http_parser/%.c 
+	$(CC) -c $(release_CFLAGS) $(release_CPPFLAGS) $(http_parser_CFLAGS) \
 		$(http_parser_CPPFLAGS) $< -o $@
 
-$(profile_builddir)/deps/c-ares/%.o: deps/c-ares/%.c 
-	$(CC) -c $(CFLAGS) $(CPPFLAGS) $(cares_CFLAGS) $(cares_CPPFLAGS) $< -o $@
+$(builddir)/debug/deps/http_parser/%.o: deps/http_parser/%.c 
+	$(CC) -c $(debug_CFLAGS) $(debug_CPPFLAGS) $(http_parser_CFLAGS) \
+		$(http_parser_CPPFLAGS) $< -o $@
 
-$(profile_builddir)/src/%.o: src/%.cc
-	$(CXX) -c $(CXXFLAGS) $(CPPFLAGS) $(node_CFLAGS) $(node_CPPFLAGS) \
-		$(OPENSSL_CPPFLAGS) $< -o $@
 
-$(profile_builddir)/src/node.o: src/node.cc $(profile_builddir)/src/node_natives.h
-	$(CXX) -c $(CXXFLAGS) $(CPPFLAGS) $(node_CFLAGS) $(node_CPPFLAGS) \
-		$(OPENSSL_CPPFLAGS) $< -o $@
+# c-ares
 
-$(profile_builddir)/node: $(node_objects) $(libev_objects) $(libeio_objects) \
-		$(http_parser_objects) $(cares_objects) $(libv8)
-	$(CXX) -o $@ $^ $(LINKFLAGS) $(node_LINKFLAGS) $(OPENSSL_LINKFLAGS)
+$(builddir)/release/deps/c-ares/%.o: deps/c-ares/%.c 
+	$(CC) -c $(release_CFLAGS) $(release_CPPFLAGS) $(cares_CFLAGS) \
+		$(cares_CPPFLAGS) $< -o $@
 
-$(profile_builddir)/src/node_natives.h: src/node.js lib/*.js
+$(builddir)/debug/deps/c-ares/%.o: deps/c-ares/%.c 
+	$(CC) -c $(debug_CFLAGS) $(debug_CPPFLAGS) $(cares_CFLAGS) \
+		$(cares_CPPFLAGS) $< -o $@
+
+
+# node
+
+$(builddir)/release/src/%.o: src/%.cc
+	$(CXX) -c $(release_CXXFLAGS) $(release_CPPFLAGS) $(node_CXXFLAGS) \
+		$(node_CPPFLAGS) $(OPENSSL_CPPFLAGS) $< -o $@
+
+$(builddir)/debug/src/%.o: src/%.cc
+	$(CXX) -c $(debug_CXXFLAGS) $(debug_CPPFLAGS) $(node_CXXFLAGS) \
+		$(node_CPPFLAGS) $(OPENSSL_CPPFLAGS) $< -o $@
+
+
+# node.o
+
+$(builddir)/release/src/node.o: src/node.cc $(builddir)/release/src/node_natives.h
+	$(CXX) -c $(release_CXXFLAGS) $(release_CPPFLAGS) $(node_CFLAGS) \
+		$(node_CPPFLAGS) $(OPENSSL_CPPFLAGS) $< -o $@
+
+$(builddir)/debug/src/node.o: src/node.cc $(builddir)/debug/src/node_natives.h
+	$(CXX) -c $(debug_CXXFLAGS) $(debug_CPPFLAGS) $(node_CFLAGS) \
+		$(node_CPPFLAGS) $(OPENSSL_CPPFLAGS) $< -o $@
+
+
+# node executable
+
+$(builddir)/node: $(node_release_objects) $(libev_release_objects) \
+		$(libeio_release_objects) $(http_parser_release_objects) \
+		$(cares_release_objects) $(libv8)
+	$(CXX) -o $@ $^ $(release_LINKFLAGS) $(node_LINKFLAGS) $(OPENSSL_LINKFLAGS)
+
+$(builddir)/node_g: $(node_debug_objects) $(libev_debug_objects) \
+		$(libeio_debug_objects) $(http_parser_debug_objects) \
+		$(cares_debug_objects) $(libv8_g)
+	$(CXX) -o $@ $^ $(debug_LINKFLAGS) $(node_LINKFLAGS) $(OPENSSL_LINKFLAGS)
+
+
+
+$(builddir)/release/src/node_natives.h: src/node.js lib/*.js
+	python tools/js2c.py $^ > $@
+
+$(builddir)/debug/src/node_natives.h: src/node.js lib/*.js
 	python tools/js2c.py $^ > $@
 	# TODO a debug flag for the macros ?
 
-$(profile_builddir)/src/node_config.h: src/node_config.h.in
+
+
+$(builddir)/release/src/node_config.h: src/node_config.h.in
 	sed -e "s#@PREFIX@#$(PREFIX)#" \
-		-e "s#@CCFLAGS@#$(CFLAGS)#" \
-		-e "s#@CPPFLAGS@#$(CPPFLAGS)#" $< > $@ || rm $@
+		-e "s#@CCFLAGS@#$(release_CFLAGS)#" \
+		-e "s#@CPPFLAGS@#$(release_CPPFLAGS)#" $< > $@ || rm $@
+
+$(builddir)/debug/src/node_config.h: src/node_config.h.in
+	sed -e "s#@PREFIX@#$(PREFIX)#" \
+		-e "s#@CCFLAGS@#$(debug_CFLAGS)#" \
+		-e "s#@CPPFLAGS@#$(debug_CPPFLAGS)#" $< > $@ || rm $@
+
 
 # FIXME convert to a generalized *.in preprocessor
-$(profile_builddir)/lib/pkgconfig/nodejs.pc: tools/nodejs.pc.in
+$(builddir)/release/lib/pkgconfig/nodejs.pc: tools/nodejs.pc.in
 	sed \
 		-e "s#@PREFIX@#$(PREFIX)#" \
 		-e "s#@VERSION@#$(VERSION)#" \
@@ -176,24 +261,15 @@ $(libv8):
 	python tools/scons/scons.py -C $(builddir) -Y `pwd`/deps/v8 \
 		visibility=default mode=release arch=x64 library=static snapshot=on
 
+$(libv8_g):
+	python tools/scons/scons.py -C $(builddir) -Y `pwd`/deps/v8 \
+		visibility=default mode=debug arch=x64 library=static snapshot=on
+
 
 # header deps
-src/node_version.h: $(profile_builddir)/src/node_config.h
-src/node.cc: $(profile_builddir)/src/node_config.h
+$(builddir)/release/src/node.o: $(builddir)/release/src/node_config.h
+$(builddir)/debug/src/node.o: $(builddir)/debug/src/node_config.h
 
-
-#
-#
-# OLD
-#
-#
-
-
-
-WAF=python tools/waf-light
-
-all-progress:
-	@$(WAF) -p build
 
 install:
 	$(INSTALL) -d \
@@ -202,12 +278,10 @@ install:
 		$(PREFIX)/lib/pkgconfig \
 		$(PREFIX)/share/man/man1
 
-	$(INSTALL) $(profile_builddir)/lib/pkgconfig/nodejs.pc $(PREFIX)/lib/pkgconfig/nodejs.pc
+	$(INSTALL) $(builddir)/release/lib/pkgconfig/nodejs.pc $(PREFIX)/lib/pkgconfig/nodejs.pc
 
 	@$(WAF) install
 
-uninstall:
-	@$(WAF) uninstall
 
 test: all
 	python tools/test.py --mode=release simple message
